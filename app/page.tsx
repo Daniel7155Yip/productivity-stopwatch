@@ -1,65 +1,219 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useRef, useState } from "react";
+import { supabase, type Session } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+function AuthForm() {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const { error } =
+      mode === "login"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
+    if (error) setError(error.message);
+    setLoading(false);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex min-h-screen items-center justify-center">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-4 p-8 bg-zinc-900 rounded-xl">
+        <h1 className="text-2xl font-semibold text-center">
+          {mode === "login" ? "Sign in" : "Create account"}
+        </h1>
+        <input
+          className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-indigo-500"
+          type="email" placeholder="Email" value={email}
+          onChange={e => setEmail(e.target.value)} required
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <input
+          className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-indigo-500"
+          type="password" placeholder="Password" value={password}
+          onChange={e => setPassword(e.target.value)} required
+        />
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+        <button
+          className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium disabled:opacity-50"
+          type="submit" disabled={loading}
+        >
+          {loading ? "…" : mode === "login" ? "Sign in" : "Sign up"}
+        </button>
+        <p className="text-center text-sm text-zinc-400">
+          {mode === "login" ? "No account?" : "Have an account?"}{" "}
+          <button type="button" className="text-indigo-400 hover:underline"
+            onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+            {mode === "login" ? "Sign up" : "Sign in"}
+          </button>
+        </p>
+      </form>
     </div>
   );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmt(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function App({ user }: { user: User }) {
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const startRef = useRef<Date | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  async function loadSessions() {
+    const { data } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("started_at", { ascending: false });
+    if (data) setSessions(data as Session[]);
+  }
+
+  function start() {
+    startRef.current = new Date();
+    setRunning(true);
+    intervalRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+  }
+
+  function pause() {
+    setRunning(false);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  }
+
+  async function stop() {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setRunning(false);
+    if (!startRef.current || elapsed === 0) { setElapsed(0); return; }
+
+    const ended = new Date();
+    await supabase.from("sessions").insert({
+      user_id: user.id,
+      started_at: startRef.current.toISOString(),
+      ended_at: ended.toISOString(),
+      duration_seconds: elapsed,
+    });
+    setElapsed(0);
+    startRef.current = null;
+    loadSessions();
+  }
+
+  // Dashboard calculations
+  const todayStr = new Date().toDateString();
+  const todaySeconds = sessions
+    .filter(s => new Date(s.started_at).toDateString() === todayStr)
+    .reduce((sum, s) => sum + s.duration_seconds, 0);
+
+  const byDay: Record<string, number> = {};
+  for (const s of sessions) {
+    const day = fmtDate(s.started_at);
+    byDay[day] = (byDay[day] ?? 0) + s.duration_seconds;
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col items-center py-16 px-4 gap-10">
+      {/* Header */}
+      <div className="flex w-full max-w-md justify-between items-center">
+        <h1 className="text-xl font-semibold">Stopwatch</h1>
+        <button onClick={() => supabase.auth.signOut()} className="text-sm text-zinc-400 hover:text-zinc-200">
+          Sign out
+        </button>
+      </div>
+
+      {/* Stopwatch */}
+      <div className="w-full max-w-md bg-zinc-900 rounded-2xl p-10 flex flex-col items-center gap-8">
+        <span className="font-mono text-7xl tracking-tight">{fmt(elapsed)}</span>
+        <div className="flex gap-3">
+          {!running ? (
+            <button onClick={start}
+              className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium">
+              {elapsed > 0 ? "Resume" : "Start"}
+            </button>
+          ) : (
+            <button onClick={pause}
+              className="px-6 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 font-medium">
+              Pause
+            </button>
+          )}
+          <button onClick={stop} disabled={elapsed === 0}
+            className="px-6 py-2 rounded-lg bg-red-700 hover:bg-red-600 font-medium disabled:opacity-30">
+            Stop
+          </button>
+        </div>
+      </div>
+
+      {/* Dashboard */}
+      <div className="w-full max-w-md space-y-4">
+        <div className="bg-zinc-900 rounded-xl p-5">
+          <p className="text-sm text-zinc-400 mb-1">Today</p>
+          <p className="font-mono text-3xl">{fmt(todaySeconds)}</p>
+        </div>
+
+        <div className="bg-zinc-900 rounded-xl p-5">
+          <p className="text-sm text-zinc-400 mb-3">All sessions by day</p>
+          {Object.keys(byDay).length === 0 ? (
+            <p className="text-zinc-500 text-sm">No sessions yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {Object.entries(byDay).map(([day, secs]) => (
+                <li key={day} className="flex justify-between text-sm">
+                  <span className="text-zinc-300">{day}</span>
+                  <span className="font-mono text-zinc-100">{fmt(secs)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+
+export default function Page() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return (
+    <div className="flex min-h-screen items-center justify-center text-zinc-500">Loading…</div>
+  );
+
+  return user ? <App user={user} /> : <AuthForm />;
 }

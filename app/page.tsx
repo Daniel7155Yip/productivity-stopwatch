@@ -1,8 +1,26 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { supabase, type Session } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { loadShortcuts, matchesShortcut } from "@/app/settings/page";
+import { supabase, type Session, type Task } from "@/lib/supabase";
+import { Nav, LockInButton, SettingsGear } from "@/app/components/Nav";
 import type { User } from "@supabase/supabase-js";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmt(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
+}
+
+function todayLabel() {
+  return new Date().toLocaleDateString(undefined, {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -26,31 +44,33 @@ function AuthForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4 p-8 bg-zinc-900 rounded-xl">
-        <h1 className="text-2xl font-semibold text-center">
-          {mode === "login" ? "Sign in" : "Create account"}
-        </h1>
+    <div className="flex min-h-screen flex-col items-center justify-center px-4">
+      <p className="text-xs text-stone-400 mb-6 tracking-widest uppercase">{todayLabel()}</p>
+      <h1 className="text-4xl text-stone-700 mb-2" style={{ fontFamily: "var(--font-lora), serif", fontWeight: 500 }}>
+        Let&apos;s get started.
+      </h1>
+      <p className="text-stone-400 text-sm mb-10">Sign in to track your focus sessions.</p>
+      <form onSubmit={submit} className="w-full max-w-sm space-y-3">
         <input
-          className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-indigo-500"
+          className="w-full px-4 py-3 rounded-xl bg-white border border-stone-200 focus:outline-none focus:border-amber-400 text-stone-800 placeholder:text-stone-300"
           type="email" placeholder="Email" value={email}
           onChange={e => setEmail(e.target.value)} required
         />
         <input
-          className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-indigo-500"
+          className="w-full px-4 py-3 rounded-xl bg-white border border-stone-200 focus:outline-none focus:border-amber-400 text-stone-800 placeholder:text-stone-300"
           type="password" placeholder="Password" value={password}
           onChange={e => setPassword(e.target.value)} required
         />
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && <p className="text-rose-400 text-sm">{error}</p>}
         <button
-          className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium disabled:opacity-50"
+          className="w-full py-3 rounded-xl bg-stone-700 hover:bg-stone-600 text-amber-50 font-medium transition-colors disabled:opacity-50"
           type="submit" disabled={loading}
         >
           {loading ? "…" : mode === "login" ? "Sign in" : "Sign up"}
         </button>
-        <p className="text-center text-sm text-zinc-400">
+        <p className="text-center text-sm text-stone-400 pt-1">
           {mode === "login" ? "No account?" : "Have an account?"}{" "}
-          <button type="button" className="text-indigo-400 hover:underline"
+          <button type="button" className="text-amber-600 hover:underline"
             onClick={() => setMode(mode === "login" ? "signup" : "login")}>
             {mode === "login" ? "Sign up" : "Sign in"}
           </button>
@@ -60,39 +80,82 @@ function AuthForm() {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmt(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
-}
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
 // ── App ───────────────────────────────────────────────────────────────────────
 
 function App({ user }: { user: User }) {
+  const router = useRouter();
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
   const startRef = useRef<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string>("");
+  const [newTaskName, setNewTaskName] = useState("");
+  const [addingTask, setAddingTask] = useState(false);
+  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   useEffect(() => {
     loadSessions();
+    loadTasks();
   }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const sc = loadShortcuts();
+      if (e.key === " ") {
+        e.preventDefault();
+        if (!running && elapsed === 0) start();
+        else if (running) pause();
+      }
+      if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); stop(); }
+      if (matchesShortcut(e, sc.timer)) router.push("/");
+      if (matchesShortcut(e, sc.stats)) router.push("/stats");
+      if (matchesShortcut(e, sc.history)) router.push("/history");
+      if (matchesShortcut(e, sc.settings)) router.push("/settings");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [running, elapsed]);
 
   async function loadSessions() {
     const { data } = await supabase
-      .from("sessions")
-      .select("*")
-      .eq("user_id", user.id)
+      .from("sessions").select("*").eq("user_id", user.id)
       .order("started_at", { ascending: false });
     if (data) setSessions(data as Session[]);
+  }
+
+  async function loadTasks() {
+    const { data } = await supabase
+      .from("tasks").select("*").eq("user_id", user.id).eq("archived", false)
+      .order("created_at", { ascending: true });
+    if (data) setTasks(data as Task[]);
+  }
+
+  async function createTask() {
+    const name = newTaskName.trim();
+    if (!name) return;
+    const { data } = await supabase.from("tasks").insert({ user_id: user.id, name }).select().single();
+    if (data) {
+      setTasks(prev => [...prev, data as Task]);
+      setSelectedTaskId((data as Task).id);
+    }
+    setNewTaskName("");
+    setAddingTask(false);
+  }
+
+  async function renameTask() {
+    const name = renameValue.trim();
+    if (!name || !renamingTaskId) return;
+    await supabase.from("tasks").update({ name }).eq("id", renamingTaskId);
+    setTasks(prev => prev.map(t => t.id === renamingTaskId ? { ...t, name } : t));
+    setRenamingTaskId(null);
+    setRenameValue("");
   }
 
   function start() {
@@ -110,86 +173,199 @@ function App({ user }: { user: User }) {
     if (intervalRef.current) clearInterval(intervalRef.current);
     setRunning(false);
     if (!startRef.current || elapsed === 0) { setElapsed(0); return; }
-
     const ended = new Date();
     await supabase.from("sessions").insert({
       user_id: user.id,
       started_at: startRef.current.toISOString(),
       ended_at: ended.toISOString(),
       duration_seconds: elapsed,
+      task_id: selectedTaskId || null,
     });
     setElapsed(0);
     startRef.current = null;
     loadSessions();
   }
 
-  // Dashboard calculations
   const todayStr = new Date().toDateString();
   const todaySeconds = sessions
     .filter(s => new Date(s.started_at).toDateString() === todayStr)
     .reduce((sum, s) => sum + s.duration_seconds, 0);
 
-  const byDay: Record<string, number> = {};
-  for (const s of sessions) {
-    const day = fmtDate(s.started_at);
-    byDay[day] = (byDay[day] ?? 0) + s.duration_seconds;
-  }
+  const selectedTask = tasks.find(t => t.id === selectedTaskId);
+  const hasSessions = sessions.length > 0;
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-16 px-4 gap-10">
+    <div className="min-h-screen flex flex-col items-center py-12 px-4 gap-8 max-w-2xl mx-auto">
+      <SettingsGear />
+
       {/* Header */}
-      <div className="flex w-full max-w-md justify-between items-center">
-        <h1 className="text-xl font-semibold">Stopwatch</h1>
-        <button onClick={() => supabase.auth.signOut()} className="text-sm text-zinc-400 hover:text-zinc-200">
-          Sign out
-        </button>
+      <div className="flex w-full justify-between items-center">
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-stone-400 tracking-widest uppercase">{todayLabel()}</p>
+          <LockInButton onLockIn={!running ? start : undefined} />
+        </div>
+        <Nav />
       </div>
 
+      {/* Welcome */}
+      {!running && elapsed === 0 && (
+        <div className="w-full">
+          <h2 className="text-3xl text-stone-700" style={{ fontFamily: "var(--font-lora), serif", fontWeight: 500 }}>
+            {hasSessions ? "Welcome back." : "Let\u2019s get started."}
+          </h2>
+          {!hasSessions && <p className="text-stone-400 text-sm mt-1">Create a task and start your first session.</p>}
+        </div>
+      )}
+
       {/* Stopwatch */}
-      <div className="w-full max-w-md bg-zinc-900 rounded-2xl p-10 flex flex-col items-center gap-8">
-        <span className="font-mono text-7xl tracking-tight">{fmt(elapsed)}</span>
-        <div className="flex gap-3">
+      <div className="w-full bg-white/50 border border-stone-200 rounded-2xl p-10 flex flex-col items-center gap-6">
+
+        {/* Working on label — top */}
+        {selectedTask ? (
+          <div
+            className="px-4 py-1.5 rounded-lg text-sm font-medium"
+            style={{ backgroundColor: "rgba(196,164,132,0.18)", border: "1px solid rgba(196,164,132,0.35)", color: "#7a5c3a" }}
+          >
+            Working on: {selectedTask.name}
+          </div>
+        ) : (
+          <p className="text-xs text-stone-400">No task selected</p>
+        )}
+
+        {/* Task row */}
+        {renamingTaskId ? (
+          <div className="flex gap-2 w-full max-w-xs">
+            <input
+              autoFocus
+              className="flex-1 px-3 py-2 rounded-xl bg-white border border-stone-200 focus:outline-none focus:border-amber-400 text-stone-800 text-sm placeholder:text-stone-300"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") renameTask();
+                if (e.key === "Escape") { setRenamingTaskId(null); setRenameValue(""); }
+              }}
+            />
+            <button onClick={renameTask}
+              className="px-3 py-2 rounded-xl bg-stone-700 text-amber-50 text-sm hover:bg-stone-600 transition-colors">
+              Save
+            </button>
+            <button onClick={() => { setRenamingTaskId(null); setRenameValue(""); }}
+              className="px-3 py-2 rounded-xl bg-stone-100 text-stone-500 text-sm hover:bg-stone-200 transition-colors">
+              ✕
+            </button>
+          </div>
+        ) : addingTask ? (
+          <div className="flex gap-2 w-full max-w-xs">
+            <input
+              autoFocus
+              className="flex-1 px-3 py-2 rounded-xl bg-white border border-stone-200 focus:outline-none focus:border-amber-400 text-stone-800 text-sm placeholder:text-stone-300"
+              placeholder="e.g. CSSE2010"
+              value={newTaskName}
+              onChange={e => setNewTaskName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") createTask();
+                if (e.key === "Escape") { setAddingTask(false); setNewTaskName(""); }
+              }}
+            />
+            <button onClick={createTask}
+              className="px-3 py-2 rounded-xl bg-stone-700 text-amber-50 text-sm hover:bg-stone-600 transition-colors">
+              Add
+            </button>
+            <button onClick={() => { setAddingTask(false); setNewTaskName(""); }}
+              className="px-3 py-2 rounded-xl bg-stone-100 text-stone-500 text-sm hover:bg-stone-200 transition-colors">
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className={`flex items-center gap-2 w-full max-w-xs ${running ? "opacity-40 pointer-events-none" : ""}`}>
+            {selectedTaskId && (
+              <button
+                onClick={() => { setRenamingTaskId(selectedTaskId); setRenameValue(selectedTask?.name ?? ""); }}
+                className="text-stone-300 hover:text-stone-500 transition-colors shrink-0"
+                title="Rename task"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+            )}
+            <select
+              value={selectedTaskId}
+              disabled={running}
+              onChange={e => setSelectedTaskId(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-xl bg-amber-50 border border-stone-200 text-sm text-stone-600 focus:outline-none focus:border-amber-400 appearance-none cursor-pointer disabled:cursor-not-allowed"
+            >
+              <option value="">No task selected</option>
+              {tasks.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {!selectedTaskId && (
+              <button onClick={() => setAddingTask(true)}
+                className="text-xs text-stone-400 hover:text-stone-600 transition-colors whitespace-nowrap">
+                + Add task
+              </button>
+            )}
+            {selectedTaskId && (
+              <button
+                onClick={async () => {
+                  await supabase.from("tasks").update({ archived: true }).eq("id", selectedTaskId);
+                  setTasks(prev => prev.filter(t => t.id !== selectedTaskId));
+                  setSelectedTaskId("");
+                }}
+                className="text-xs text-rose-400 hover:text-rose-600 transition-colors whitespace-nowrap"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Timer */}
+        <span className="text-8xl tracking-tight text-stone-700"
+          style={{ fontFamily: "var(--font-lora), serif", fontVariantNumeric: "tabular-nums" }}>
+          {fmt(elapsed)}
+        </span>
+
+        {/* Controls */}
+        <div className="flex gap-3 items-center">
           {!running ? (
             <button onClick={start}
-              className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium">
-              {elapsed > 0 ? "Resume" : "Start"}
+              className="w-14 h-14 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80"
+              style={{ backgroundColor: "#7D7575" }}>
+              {/* Play icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5,3 19,12 5,21"/>
+              </svg>
             </button>
           ) : (
             <button onClick={pause}
-              className="px-6 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 font-medium">
-              Pause
+              className="w-14 h-14 rounded-full bg-stone-200 hover:bg-stone-300 flex items-center justify-center text-stone-700 transition-colors">
+              {/* Pause icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" rx="1"/>
+                <rect x="14" y="4" width="4" height="16" rx="1"/>
+              </svg>
             </button>
           )}
           <button onClick={stop} disabled={elapsed === 0}
-            className="px-6 py-2 rounded-lg bg-red-700 hover:bg-red-600 font-medium disabled:opacity-30">
-            Stop
+            className="w-14 h-14 rounded-full bg-rose-100 hover:bg-rose-200 flex items-center justify-center text-rose-500 transition-colors disabled:opacity-30">
+            {/* Stop icon */}
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+            </svg>
           </button>
         </div>
       </div>
 
-      {/* Dashboard */}
-      <div className="w-full max-w-md space-y-4">
-        <div className="bg-zinc-900 rounded-xl p-5">
-          <p className="text-sm text-zinc-400 mb-1">Today</p>
-          <p className="font-mono text-3xl">{fmt(todaySeconds)}</p>
+      {/* Today summary */}
+      {todaySeconds > 0 && (
+        <div className="w-full bg-amber-100/60 border border-amber-200 rounded-xl px-5 py-4 flex justify-between items-center">
+          <p className="text-xs text-amber-700 uppercase tracking-wide">Today</p>
+          <p className="font-mono text-2xl text-amber-800">{fmt(todaySeconds)}</p>
         </div>
-
-        <div className="bg-zinc-900 rounded-xl p-5">
-          <p className="text-sm text-zinc-400 mb-3">All sessions by day</p>
-          {Object.keys(byDay).length === 0 ? (
-            <p className="text-zinc-500 text-sm">No sessions yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {Object.entries(byDay).map(([day, secs]) => (
-                <li key={day} className="flex justify-between text-sm">
-                  <span className="text-zinc-300">{day}</span>
-                  <span className="font-mono text-zinc-100">{fmt(secs)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -212,7 +388,7 @@ export default function Page() {
   }, []);
 
   if (loading) return (
-    <div className="flex min-h-screen items-center justify-center text-zinc-500">Loading…</div>
+    <div className="flex min-h-screen items-center justify-center text-stone-400 text-sm">Loading…</div>
   );
 
   return user ? <App user={user} /> : <AuthForm />;

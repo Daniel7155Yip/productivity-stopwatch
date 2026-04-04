@@ -1,5 +1,16 @@
 import type { Metadata } from "next";
+import { Lora, DM_Sans } from "next/font/google";
 import "./globals.css";
+
+const lora = Lora({
+  subsets: ["latin"],
+  variable: "--font-lora",
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
+});
 
 export const metadata: Metadata = {
   title: "Productivity Stopwatch",
@@ -8,8 +19,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
-      <body className="min-h-full bg-zinc-950 text-zinc-100 font-sans">{children}</body>
+    <html lang="en" className={`h-full ${lora.variable} ${dmSans.variable}`}>
+      <body className="min-h-full bg-amber-50 text-stone-800" style={{ fontFamily: "var(--font-dm-sans), sans-serif" }}>
+        {children}
+      </body>
     </html>
   );
 }

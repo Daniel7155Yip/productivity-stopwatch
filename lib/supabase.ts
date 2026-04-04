@@ -11,5 +11,14 @@ export type Session = {
   started_at: string
   ended_at: string
   duration_seconds: number
+  task_id: string | null
+  created_at: string
+}
+
+export type Task = {
+  id: string
+  user_id: string
+  name: string
+  archived: boolean
   created_at: string
 }

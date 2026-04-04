@@ -30,7 +30,22 @@ export function loadShortcuts() {
   } catch { return DEFAULT_SHORTCUTS; }
 }
 
-// Match a KeyboardEvent against a stored combo string like "Ctrl+B" or "1"
+// Human-readable names for keys that don't print a visible character
+const KEY_DISPLAY: Record<string, string> = {
+  " ": "Space",
+  "Escape": "Esc",
+  "Delete": "Del",
+  "ArrowUp": "Up",
+  "ArrowDown": "Down",
+  "ArrowLeft": "Left",
+  "ArrowRight": "Right",
+};
+// Reverse: display name → actual e.key value
+const KEY_EVENT: Record<string, string> = Object.fromEntries(
+  Object.entries(KEY_DISPLAY).map(([k, v]) => [v, k])
+);
+
+// Match a KeyboardEvent against a stored combo string like "Ctrl+B" or "Ctrl+Space"
 export function matchesShortcut(e: KeyboardEvent, combo: string): boolean {
   const parts = combo.split("+");
   let needCtrl = false, needAlt = false, needShift = false, needMeta = false;
@@ -46,8 +61,10 @@ export function matchesShortcut(e: KeyboardEvent, combo: string): boolean {
   if (needAlt !== e.altKey) return false;
   if (needShift !== e.shiftKey) return false;
   if (needMeta !== e.metaKey) return false;
-  const eventKey = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  return eventKey === key;
+  // Convert display name back to the raw e.key value, then compare
+  const expectedKey = KEY_EVENT[key] ?? key;
+  const actualKey = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  return actualKey === expectedKey || e.key === expectedKey;
 }
 
 // ── Format a key combo for display ───────────────────────────────────────────
@@ -64,9 +81,8 @@ function eventToCombo(e: KeyboardEvent): string {
   if (e.shiftKey) parts.push("Shift");
   if (e.metaKey) parts.push("Meta");
   const key = e.key;
-  // Skip if the key itself is a modifier
   if (!["Control", "Alt", "Shift", "Meta"].includes(key)) {
-    parts.push(key.length === 1 ? key.toUpperCase() : key);
+    parts.push(KEY_DISPLAY[key] ?? (key.length === 1 ? key.toUpperCase() : key));
   }
   return parts.join("+");
 }
@@ -182,10 +198,10 @@ function SettingsContent({ user }: { user: User }) {
 
   const shortcutRows = [
     { id: "timer",     label: "Lock in" },
+    { id: "stopTimer", label: "Stop timer" },
     { id: "stats",     label: "Go to Stats" },
     { id: "history",   label: "Go to History" },
     { id: "settings",  label: "Go to Settings" },
-    { id: "stopTimer", label: "Stop timer" },
   ];
 
   return (

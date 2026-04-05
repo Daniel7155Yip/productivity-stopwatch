@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadShortcuts, matchesShortcut } from "@/app/settings/page";
 import { supabase, type Session, type Task } from "@/lib/supabase";
@@ -110,7 +110,15 @@ function HistoryContent({ user }: { user: User }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [view, setView] = useState<View>("week");
+  const [sessionPage, setSessionPage] = useState(0);
+  const sessionsCardRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<View>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("history-view");
+      if (saved === "day" || saved === "week" || saved === "month") return saved;
+    }
+    return "day";
+  });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -181,7 +189,9 @@ function HistoryContent({ user }: { user: User }) {
   const totalInView = bars.reduce((sum, b) => sum + b.seconds, 0);
 
   // Recent sessions list
-  const recent = sessions.slice(0, 20);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.ceil(sessions.length / PAGE_SIZE);
+  const pageSessions = sessions.slice(sessionPage * PAGE_SIZE, (sessionPage + 1) * PAGE_SIZE);
   const taskMap: Record<string, string> = {};
   tasks.forEach(t => { taskMap[t.id] = t.name; });
 
@@ -213,7 +223,7 @@ function HistoryContent({ user }: { user: User }) {
             {(["day", "week", "month"] as View[]).map(v => (
               <button
                 key={v}
-                onClick={() => setView(v)}
+                onClick={() => { setView(v); localStorage.setItem("history-view", v); }}
                 className={`text-[10px] px-2.5 py-1 rounded-md transition-colors font-medium capitalize ${
                   view === v ? "bg-white text-stone-700 shadow-sm" : "text-stone-400 hover:text-stone-600"
                 }`}
@@ -253,11 +263,16 @@ function HistoryContent({ user }: { user: User }) {
       </div>
 
       {/* Recent sessions */}
-      {recent.length > 0 && (
-        <div className="w-full bg-white/50 border border-stone-200 rounded-xl p-5">
-          <p className="text-xs text-stone-400 uppercase tracking-wide mb-3">Recent sessions</p>
+      {sessions.length > 0 && (
+        <div ref={sessionsCardRef} className="w-full bg-white/50 border border-stone-200 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-stone-400 uppercase tracking-wide">Recent sessions</p>
+            {totalPages > 1 && (
+              <p className="text-xs text-stone-400">{sessionPage + 1} / {totalPages}</p>
+            )}
+          </div>
           <ul className="space-y-2">
-            {recent.map(s => (
+            {pageSessions.map(s => (
               <li key={s.id} className="flex justify-between items-center text-sm">
                 <div>
                   <span className="text-stone-600">
@@ -273,6 +288,24 @@ function HistoryContent({ user }: { user: User }) {
               </li>
             ))}
           </ul>
+          {totalPages > 1 && (
+            <div className="flex justify-between items-center mt-4 pt-3 border-t border-stone-100">
+              <button
+                onClick={() => { setSessionPage(p => p - 1); setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), 0); }}
+                disabled={sessionPage === 0}
+                className="text-xs text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                ← Newer
+              </button>
+              <button
+                onClick={() => { setSessionPage(p => p + 1); setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), 0); }}
+                disabled={sessionPage >= totalPages - 1}
+                className="text-xs text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Older →
+              </button>
+            </div>
+          )}
         </div>
       )}
 

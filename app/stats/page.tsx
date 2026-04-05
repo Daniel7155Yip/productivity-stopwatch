@@ -23,7 +23,10 @@ function todayLabel() {
 }
 
 function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 // ── Heatmap config ────────────────────────────────────────────────────────────
@@ -203,17 +206,21 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
     byDate[key] = (byDate[key] ?? 0) + s.duration_seconds;
   }
 
+  // Rolling annual window: same date last year → today
   const today = new Date();
-  const dayOfWeek = today.getDay();
-  const end = new Date(today);
-  end.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const rangeStart = new Date(today);
+  const rangeEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
 
-  const start = new Date(end);
-  start.setDate(start.getDate() - (51 * 7 + dayOfWeek));
+  // Pad grid to Sunday of rangeStart's week and Saturday of today's week
+  const gridStart = new Date(rangeStart);
+  gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+  const gridEnd = new Date(rangeEnd);
+  gridEnd.setDate(gridEnd.getDate() + (6 - rangeEnd.getDay()));
 
   const weeks: Date[][] = [];
-  const current = new Date(start);
-  while (current <= end) {
+  const current = new Date(gridStart);
+  while (current <= gridEnd) {
     const week: Date[] = [];
     for (let d = 0; d < 7; d++) {
       week.push(new Date(current));
@@ -224,34 +231,39 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
 
   const monthLabels = weeks.map((week, i) => {
     if (i === 0) return week[0].toLocaleDateString(undefined, { month: "short" });
-    const hasFirst = week.some(d => d.getDate() === 1);
-    if (hasFirst) {
-      const day1 = week.find(d => d.getDate() === 1)!;
-      return day1.toLocaleDateString(undefined, { month: "short" });
-    }
-    return null;
+    const day1 = week.find(d => d.getDate() === 1);
+    return day1 ? day1.toLocaleDateString(undefined, { month: "short" }) : null;
   });
 
-  // Streak calculation
-  const allDays = weeks.flat();
+  // Current streak: count back from today (skip today if no session yet)
+  const streakCheck = new Date(today);
+  if (!byDate[dateKey(streakCheck)]) streakCheck.setDate(streakCheck.getDate() - 1);
   let currentStreak = 0;
-  let longestStreak = 0;
-  let streak = 0;
-  for (let i = allDays.length - 1; i >= 0; i--) {
-    const key = dateKey(allDays[i]);
-    if (byDate[key] > 0) {
-      streak++;
-      if (currentStreak === 0) currentStreak = streak;
-    } else {
-      if (currentStreak === 0 && i === allDays.length - 1) {
-        // no session today yet — don't break yesterday's streak
-      } else {
-        longestStreak = Math.max(longestStreak, streak);
-        streak = 0;
-      }
-    }
+  const cs = new Date(streakCheck);
+  while (byDate[dateKey(cs)] > 0) {
+    currentStreak++;
+    cs.setDate(cs.getDate() - 1);
   }
-  longestStreak = Math.max(longestStreak, streak);
+
+  // Longest streak: scan all-time session dates
+  const activeDates = Object.keys(byDate).filter(k => byDate[k] > 0).sort();
+  let longestStreak = 0;
+  let tempStreak = 0;
+  let prevKey: string | null = null;
+  for (const key of activeDates) {
+    if (prevKey) {
+      const prev = new Date(prevKey);
+      prev.setDate(prev.getDate() + 1);
+      tempStreak = dateKey(prev) === key ? tempStreak + 1 : 1;
+    } else {
+      tempStreak = 1;
+    }
+    longestStreak = Math.max(longestStreak, tempStreak);
+    prevKey = key;
+  }
+  longestStreak = Math.max(longestStreak, currentStreak);
+
+  const rangeLabel = `${rangeStart.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} – ${rangeEnd.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 
   return (
     <div className="w-full space-y-6">
@@ -278,7 +290,7 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
 
       {/* Grid */}
       <div className="bg-white/50 border border-stone-200 rounded-2xl p-6 overflow-x-auto">
-        <p className="text-xs text-stone-400 uppercase tracking-wide mb-3">Study streak — last 52 weeks</p>
+        <p className="text-xs text-stone-400 uppercase tracking-wide mb-3">Study streak — {rangeLabel}</p>
 
         <div className="flex gap-1">
           {/* Day labels */}
@@ -303,14 +315,14 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
                   {week.map((day, di) => {
                     const key = dateKey(day);
                     const secs = byDate[key] ?? 0;
-                    const isFuture = day > end;
+                    const isOutOfRange = day < rangeStart || day > rangeEnd;
                     return (
                       <div
                         key={di}
-                        title={`${day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${secs > 0 ? `${fmt(secs)} — ${heatLabel(secs)}` : "No session"}`}
-                        className={`w-3 h-3 rounded-sm transition-opacity ${isFuture ? "cursor-default" : "cursor-pointer hover:opacity-70"}`}
-                        style={{ backgroundColor: isFuture ? "#F5F4F3" : heatColor(secs) }}
-                        onClick={() => { if (!isFuture) setSelectedDay(day); }}
+                        title={isOutOfRange ? "" : `${day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${secs > 0 ? `${fmt(secs)} — ${heatLabel(secs)}` : "No session"}`}
+                        className={`w-3 h-3 rounded-sm transition-opacity ${isOutOfRange ? "cursor-default" : "cursor-pointer hover:opacity-70"}`}
+                        style={{ backgroundColor: isOutOfRange ? "#F5F4F3" : heatColor(secs) }}
+                        onClick={() => { if (!isOutOfRange) setSelectedDay(day); }}
                       />
                     );
                   })}

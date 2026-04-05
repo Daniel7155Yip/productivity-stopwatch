@@ -37,7 +37,7 @@ type TimerAction =
       type: "hydrate";
       payload: { elapsed: number; running: boolean; selectedTaskId: string };
     }
-  | { type: "tick" }
+  | { type: "sync-elapsed"; payload: number }
   | { type: "start" }
   | { type: "pause" }
   | { type: "reset" }
@@ -61,8 +61,9 @@ function timerReducer(state: TimerState, action: TimerAction): TimerState {
         selectedTaskId: action.payload.selectedTaskId,
         hydrated: true,
       };
-    case "tick":
-      return { ...state, elapsed: state.elapsed + 1 };
+    case "sync-elapsed":
+      if (state.elapsed === action.payload) return state;
+      return { ...state, elapsed: action.payload };
     case "start":
       return { ...state, running: true };
     case "pause":
@@ -92,91 +93,185 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(timerReducer, initialState);
   const startRef = useRef<Date | null>(null);
   const segmentStartMsRef = useRef<number | null>(null);
+  const elapsedBeforeRunRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stateRef = useRef(initialState);
 
-  useEffect(() => {
-    const saved = readPersistedTimerState();
+  function getElapsedNow(now = Date.now()) {
+    if (segmentStartMsRef.current == null) return elapsedBeforeRunRef.current;
+    return elapsedBeforeRunRef.current + Math.max(0, Math.floor((now - segmentStartMsRef.current) / 1000));
+  }
 
-    if (saved?.sessionStartISO) {
-      startRef.current = new Date(saved.sessionStartISO);
-    }
+  function syncElapsed(now = Date.now()) {
+    dispatch({ type: "sync-elapsed", payload: getElapsedNow(now) });
+  }
 
-    if (saved?.running && saved.segmentStartMs != null) {
-      const away = Math.floor((Date.now() - saved.segmentStartMs) / 1000);
-      dispatch({
-        type: "hydrate",
-        payload: {
-          elapsed: (saved.elapsed ?? 0) + away,
-          running: true,
-          selectedTaskId: saved.selectedTaskId ?? "",
-        },
-      });
-      segmentStartMsRef.current = Date.now();
-      intervalRef.current = setInterval(() => dispatch({ type: "tick" }), 1000);
-    } else {
-      dispatch({
-        type: "hydrate",
-        payload: {
-          elapsed: saved?.elapsed ?? 0,
-          running: false,
-          selectedTaskId: saved?.selectedTaskId ?? "",
-        },
-      });
-      segmentStartMsRef.current = null;
-    }
+  function clearTicker() {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = null;
+  }
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  function startTicker() {
+    clearTicker();
+    intervalRef.current = setInterval(() => {
+      syncElapsed();
+    }, 250);
+  }
 
-  useEffect(() => {
-    if (!state.hydrated) return;
+  function persistTimerState(now = Date.now()) {
+    const currentState = stateRef.current;
 
-    if (!state.running && state.elapsed === 0) {
+    if (!currentState.hydrated) return;
+
+    if (!currentState.running && currentState.elapsed === 0) {
       localStorage.removeItem("timer_state");
       return;
     }
 
+    const persistedElapsed = currentState.running ? getElapsedNow(now) : elapsedBeforeRunRef.current;
+
     localStorage.setItem(
       "timer_state",
       JSON.stringify({
-        running: state.running,
-        elapsed: state.elapsed,
-        segmentStartMs: state.running ? segmentStartMsRef.current ?? Date.now() : undefined,
+        running: currentState.running,
+        elapsed: persistedElapsed,
+        segmentStartMs: currentState.running ? now : undefined,
         sessionStartISO: startRef.current?.toISOString(),
-        selectedTaskId: state.selectedTaskId,
+        selectedTaskId: currentState.selectedTaskId,
       }),
     );
+  }
+
+  function applyPersistedState(saved: PersistedTimerState | null, now = Date.now()) {
+    clearTicker();
+
+    if (saved?.sessionStartISO) {
+      startRef.current = new Date(saved.sessionStartISO);
+    } else {
+      startRef.current = null;
+    }
+
+    elapsedBeforeRunRef.current = saved?.elapsed ?? 0;
+
+    if (saved?.running && saved.segmentStartMs != null) {
+      segmentStartMsRef.current = saved.segmentStartMs;
+      const elapsed = getElapsedNow(now);
+      dispatch({
+        type: "hydrate",
+        payload: {
+          elapsed,
+          running: true,
+          selectedTaskId: saved.selectedTaskId ?? "",
+        },
+      });
+      startTicker();
+      return;
+    }
+
+    segmentStartMsRef.current = null;
+    dispatch({
+      type: "hydrate",
+      payload: {
+        elapsed: elapsedBeforeRunRef.current,
+        running: false,
+        selectedTaskId: saved?.selectedTaskId ?? "",
+      },
+    });
+  }
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    applyPersistedState(readPersistedTimerState());
+
+    function resyncFromClock() {
+      if (segmentStartMsRef.current == null) return;
+      const now = Date.now();
+      syncElapsed(now);
+      persistTimerState(now);
+    }
+
+    function persistOnLifecycleChange() {
+      persistTimerState();
+    }
+
+    function onStorage(event: StorageEvent) {
+      if (event.key !== "timer_state") return;
+
+      if (!event.newValue) {
+        clearTicker();
+        startRef.current = null;
+        segmentStartMsRef.current = null;
+        elapsedBeforeRunRef.current = 0;
+        dispatch({
+          type: "hydrate",
+          payload: { elapsed: 0, running: false, selectedTaskId: "" },
+        });
+        return;
+      }
+
+      try {
+        applyPersistedState(JSON.parse(event.newValue) as PersistedTimerState);
+      } catch {
+        localStorage.removeItem("timer_state");
+      }
+    }
+
+    window.addEventListener("focus", resyncFromClock);
+    window.addEventListener("pageshow", resyncFromClock);
+    document.addEventListener("visibilitychange", resyncFromClock);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("pagehide", persistOnLifecycleChange);
+    window.addEventListener("beforeunload", persistOnLifecycleChange);
+
+    return () => {
+      window.removeEventListener("focus", resyncFromClock);
+      window.removeEventListener("pageshow", resyncFromClock);
+      document.removeEventListener("visibilitychange", resyncFromClock);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pagehide", persistOnLifecycleChange);
+      window.removeEventListener("beforeunload", persistOnLifecycleChange);
+      clearTicker();
+    };
+  }, []);
+
+  useEffect(() => {
+    persistTimerState();
   }, [state.elapsed, state.hydrated, state.running, state.selectedTaskId]);
 
   function start() {
     if (!startRef.current) startRef.current = new Date();
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (segmentStartMsRef.current != null) return;
     segmentStartMsRef.current = Date.now();
     dispatch({ type: "start" });
-    intervalRef.current = setInterval(() => dispatch({ type: "tick" }), 1000);
+    syncElapsed(segmentStartMsRef.current);
+    startTicker();
   }
 
   function pause() {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = null;
+    const elapsed = getElapsedNow();
+    elapsedBeforeRunRef.current = elapsed;
     segmentStartMsRef.current = null;
+    clearTicker();
+    dispatch({ type: "sync-elapsed", payload: elapsed });
     dispatch({ type: "pause" });
   }
 
   function stop(): StoppedSession | null {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = null;
+    const elapsed = getElapsedNow();
+    clearTicker();
     segmentStartMsRef.current = null;
+    elapsedBeforeRunRef.current = 0;
 
-    if (!startRef.current || state.elapsed === 0) {
+    if (!startRef.current || elapsed === 0) {
       startRef.current = null;
       dispatch({ type: "reset" });
       return null;
     }
 
-    const result: StoppedSession = { elapsed: state.elapsed, sessionStart: startRef.current };
+    const result: StoppedSession = { elapsed, sessionStart: startRef.current };
     startRef.current = null;
     dispatch({ type: "reset" });
     return result;

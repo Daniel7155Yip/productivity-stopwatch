@@ -88,11 +88,25 @@ function App({ user }: { user: User }) {
   const { elapsed, running, selectedTaskId, setSelectedTaskId, start, pause, stop } = useTimer();
 
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskName, setNewTaskName] = useState("");
   const [addingTask, setAddingTask] = useState(false);
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  const [greeting] = useState(() => {
+    const hour = new Date().getHours();
+    const pools: Record<string, string[]> = {
+      morning:   ["Good morning.", "Let\u2019s make it count.", "Ready to focus?"],
+      afternoon: ["Good afternoon.", "Let\u2019s get to work.", "Time to focus."],
+      evening:   ["Good evening.", "Evening. Time to lock in.", "Let\u2019s finish strong."],
+      night:     ["Working late?", "Let\u2019s go.", "Still at it?"],
+    };
+    const key = hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 21 ? "evening" : "night";
+    const pool = pools[key];
+    return pool[Math.floor(Math.random() * pool.length)];
+  });
 
   useEffect(() => {
     loadSessions();
@@ -125,6 +139,7 @@ function App({ user }: { user: User }) {
       .from("sessions").select("*").eq("user_id", user.id)
       .order("started_at", { ascending: false });
     if (data) setSessions(data as Session[]);
+    setSessionsLoaded(true);
   }
 
   async function loadTasks() {
@@ -194,10 +209,10 @@ function App({ user }: { user: User }) {
       </div>
 
       {/* Welcome */}
-      {!running && elapsed === 0 && (
+      {sessionsLoaded && !running && elapsed === 0 && (
         <div className="w-full">
           <h2 className="text-3xl text-stone-700" style={{ fontFamily: "var(--font-lora), serif", fontWeight: 500 }}>
-            {hasSessions ? "Welcome back." : "Let\u2019s get started."}
+            {hasSessions ? greeting : "Let\u2019s get started."}
           </h2>
           {!hasSessions && <p className="text-stone-400 text-sm mt-1">Create a task and start your first session.</p>}
         </div>

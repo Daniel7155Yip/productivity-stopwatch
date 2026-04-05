@@ -125,6 +125,7 @@ function App({ user }: { user: User }) {
         else if (running) pause();
       }
       if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); handleStop(); }
+      if (matchesShortcut(e, sc.discardSession) && elapsed > 0) { e.preventDefault(); handleDiscard(); }
       if (matchesShortcut(e, sc.timer)) router.push("/");
       if (matchesShortcut(e, sc.stats)) router.push("/stats");
       if (matchesShortcut(e, sc.history)) router.push("/history");
@@ -168,6 +169,10 @@ function App({ user }: { user: User }) {
     setTasks(prev => prev.map(t => t.id === renamingTaskId ? { ...t, name } : t));
     setRenamingTaskId(null);
     setRenameValue("");
+  }
+
+  function handleDiscard() {
+    stop(); // reset timer without saving to Supabase
   }
 
   async function handleStop() {
@@ -219,7 +224,7 @@ function App({ user }: { user: User }) {
       )}
 
       {/* Focus timer card */}
-      <div className="w-full bg-white/50 border border-stone-200 rounded-2xl p-10 flex flex-col items-center gap-6">
+      <div className="relative w-full bg-white/50 border border-stone-200 rounded-2xl p-10 flex flex-col items-center gap-6">
 
         {/* Top strip */}
         <div className="flex w-full items-center justify-center gap-4">
@@ -329,7 +334,7 @@ function App({ user }: { user: User }) {
         </span>
 
         {/* Controls */}
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-3 items-center justify-center">
           {!running ? (
             <button onClick={start}
               className="w-14 h-14 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80"
@@ -357,6 +362,18 @@ function App({ user }: { user: User }) {
             </svg>
           </button>
         </div>
+
+        {/* Discard session — bottom-right corner */}
+        <button onClick={handleDiscard} disabled={elapsed === 0}
+          className="absolute bottom-4 right-4 flex items-center justify-center text-stone-300 hover:text-rose-400 transition-colors disabled:opacity-20 disabled:pointer-events-none"
+          title="Discard session">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </button>
       </div>
 
       {/* Today summary card */}

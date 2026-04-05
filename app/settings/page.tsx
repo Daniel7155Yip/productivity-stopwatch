@@ -20,6 +20,7 @@ const DEFAULT_SHORTCUTS = {
   history: "3",
   settings: "4",
   stopTimer: "Ctrl+Enter",
+  discardSession: "Ctrl+Backspace",
 };
 
 export function loadShortcuts() {
@@ -197,11 +198,12 @@ function SettingsContent({ user }: { user: User }) {
   }
 
   const shortcutRows = [
-    { id: "timer",     label: "Lock in" },
-    { id: "stopTimer", label: "Stop timer" },
-    { id: "stats",     label: "Go to Stats" },
-    { id: "history",   label: "Go to History" },
-    { id: "settings",  label: "Go to Settings" },
+    { id: "timer",          label: "Lock in" },
+    { id: "stopTimer",      label: "Stop timer" },
+    { id: "discardSession", label: "Discard session" },
+    { id: "stats",          label: "Go to Stats" },
+    { id: "history",        label: "Go to History" },
+    { id: "settings",       label: "Go to Settings" },
   ];
 
   return (

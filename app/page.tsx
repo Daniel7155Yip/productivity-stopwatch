@@ -108,6 +108,43 @@ function App({ user }: { user: User }) {
     return pool[Math.floor(Math.random() * pool.length)];
   });
 
+  const [pausedMessage] = useState(() => {
+    const messages = [
+      "Let\u2019s get back into it.",
+      "Time to continue.",
+      "Ready when you are.",
+      "Pick up where you left off.",
+      "Don\u2019t lose your momentum.",
+      "The clock is waiting.",
+      "Almost there \u2014 keep pushing.",
+      "Rest taken. Now back to it.",
+      "You paused, not stopped.",
+      "One more push.",
+      "Recharge done. Let\u2019s go.",
+      "The work is still there.",
+      "Hit play when you\u2019re ready.",
+      "Progress doesn\u2019t pause itself.",
+      "Breathe. Then continue.",
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  });
+
+  const [workingMessage] = useState(() => {
+    const messages = [
+      "Locked in.",
+      "Studying\u2026",
+      "In the zone.",
+      "Deep work.",
+      "Stay focused.",
+      "Keep going.",
+      "Eyes on the prize.",
+      "You\u2019re doing great.",
+      "Don\u2019t stop now.",
+      "Make it count.",
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  });
+
   useEffect(() => {
     loadSessions();
     loadTasks();
@@ -220,6 +257,24 @@ function App({ user }: { user: User }) {
             {hasSessions ? greeting : "Let\u2019s get started."}
           </h2>
           {!hasSessions && <p className="text-stone-400 text-sm mt-1">Create a task and start your first session.</p>}
+        </div>
+      )}
+
+      {/* Paused */}
+      {!running && elapsed > 0 && (
+        <div className="w-full">
+          <h2 className="text-3xl text-stone-700" style={{ fontFamily: "var(--font-lora), serif", fontWeight: 500 }}>
+            {pausedMessage}
+          </h2>
+        </div>
+      )}
+
+      {/* Working */}
+      {running && (
+        <div className="w-full">
+          <h2 className="text-3xl text-stone-700" style={{ fontFamily: "var(--font-lora), serif", fontWeight: 500 }}>
+            {workingMessage}
+          </h2>
         </div>
       )}
 

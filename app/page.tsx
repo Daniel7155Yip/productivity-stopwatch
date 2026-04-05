@@ -203,20 +203,19 @@ function App({ user }: { user: User }) {
         </div>
       )}
 
-      {/* Stopwatch */}
+      {/* Focus timer card */}
       <div className="w-full bg-white/50 border border-stone-200 rounded-2xl p-10 flex flex-col items-center gap-6">
 
-        {/* Working on label — top */}
-        {selectedTask ? (
-          <div
-            className="px-4 py-1.5 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: "rgba(196,164,132,0.18)", border: "1px solid rgba(196,164,132,0.35)", color: "#7a5c3a" }}
-          >
-            Working on: {selectedTask.name}
-          </div>
-        ) : (
-          <p className="text-xs text-stone-400">No task selected</p>
-        )}
+        {/* Top strip */}
+        <div className="flex w-full items-center justify-center gap-4">
+          {selectedTask ? (
+            <p className="text-xs" style={{ color: "#797979" }}>
+              Working on: {selectedTask.name}
+            </p>
+          ) : (
+            <p className="text-xs" style={{ color: "	#797979" }}>No task selected</p>
+          )}
+        </div>
 
         {/* Task row */}
         {renamingTaskId ? (
@@ -314,12 +313,6 @@ function App({ user }: { user: User }) {
           {fmt(elapsed)}
         </span>
 
-        {/* Today studied bar */}
-        <div className="w-full flex justify-between items-center px-1">
-          <p className="text-xs text-stone-400 uppercase tracking-widest">Today</p>
-          <p className="font-mono text-sm text-stone-500">{fmt(liveTodaySeconds)}</p>
-        </div>
-
         {/* Controls */}
         <div className="flex gap-3 items-center">
           {!running ? (
@@ -349,6 +342,25 @@ function App({ user }: { user: User }) {
             </svg>
           </button>
         </div>
+      </div>
+
+      {/* Today summary card */}
+      <div
+        className="w-[85%] rounded-2xl px-8 py-4 flex items-center justify-between gap-4 self-center"
+        style={{ backgroundColor: "rgba(193,154,107,0.12)", border: "1px solid rgba(193,154,107,0.28)" }}
+      >
+        <p
+          className="font-mono text-2xl tracking-tight uppercase"
+          style={{ fontVariantNumeric: "tabular-nums", color: "#C19A6B" }}
+        >
+          Today
+        </p>
+        <p
+          className="font-mono text-2xl tracking-tight"
+          style={{ fontVariantNumeric: "tabular-nums", color: "#C19A6B" }}
+        >
+          {fmt(liveTodaySeconds)}
+        </p>
       </div>
 
     </div>

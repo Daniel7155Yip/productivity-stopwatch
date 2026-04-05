@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadShortcuts, matchesShortcut } from "@/app/settings/page";
 import { supabase, type Session, type Task } from "@/lib/supabase";
 import { Nav, LockInButton, SettingsGear } from "@/app/components/Nav";
+import { useTimer } from "@/app/components/TimerContext";
 import type { User } from "@supabase/supabase-js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -84,14 +85,10 @@ function AuthForm() {
 
 function App({ user }: { user: User }) {
   const router = useRouter();
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
-  const startRef = useRef<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { elapsed, running, selectedTaskId, setSelectedTaskId, start, pause, stop } = useTimer();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [newTaskName, setNewTaskName] = useState("");
   const [addingTask, setAddingTask] = useState(false);
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
@@ -113,7 +110,7 @@ function App({ user }: { user: User }) {
         if (!running && elapsed === 0) start();
         else if (running) pause();
       }
-      if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); stop(); }
+      if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); handleStop(); }
       if (matchesShortcut(e, sc.timer)) router.push("/");
       if (matchesShortcut(e, sc.stats)) router.push("/stats");
       if (matchesShortcut(e, sc.history)) router.push("/history");
@@ -158,38 +155,27 @@ function App({ user }: { user: User }) {
     setRenameValue("");
   }
 
-  function start() {
-    startRef.current = new Date();
-    setRunning(true);
-    intervalRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-  }
-
-  function pause() {
-    setRunning(false);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-  }
-
-  async function stop() {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    setRunning(false);
-    if (!startRef.current || elapsed === 0) { setElapsed(0); return; }
+  async function handleStop() {
+    const session = stop();
+    if (!session) return;
     const ended = new Date();
     await supabase.from("sessions").insert({
       user_id: user.id,
-      started_at: startRef.current.toISOString(),
+      started_at: session.sessionStart.toISOString(),
       ended_at: ended.toISOString(),
-      duration_seconds: elapsed,
+      duration_seconds: session.elapsed,
       task_id: selectedTaskId || null,
     });
-    setElapsed(0);
-    startRef.current = null;
     loadSessions();
   }
 
   const todayStr = new Date().toDateString();
+  // Completed sessions today (saved to Supabase)
   const todaySeconds = sessions
     .filter(s => new Date(s.started_at).toDateString() === todayStr)
     .reduce((sum, s) => sum + s.duration_seconds, 0);
+  // Include the current in-progress session so the bar updates live
+  const liveTodaySeconds = todaySeconds + elapsed;
 
   const selectedTask = tasks.find(t => t.id === selectedTaskId);
   const hasSessions = sessions.length > 0;
@@ -328,6 +314,12 @@ function App({ user }: { user: User }) {
           {fmt(elapsed)}
         </span>
 
+        {/* Today studied bar */}
+        <div className="w-full flex justify-between items-center px-1">
+          <p className="text-xs text-stone-400 uppercase tracking-widest">Today</p>
+          <p className="font-mono text-sm text-stone-500">{fmt(liveTodaySeconds)}</p>
+        </div>
+
         {/* Controls */}
         <div className="flex gap-3 items-center">
           {!running ? (
@@ -349,7 +341,7 @@ function App({ user }: { user: User }) {
               </svg>
             </button>
           )}
-          <button onClick={stop} disabled={elapsed === 0}
+          <button onClick={handleStop} disabled={elapsed === 0}
             className="w-14 h-14 rounded-full bg-rose-100 hover:bg-rose-200 flex items-center justify-center text-rose-500 transition-colors disabled:opacity-30">
             {/* Stop icon */}
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -359,13 +351,6 @@ function App({ user }: { user: User }) {
         </div>
       </div>
 
-      {/* Today summary */}
-      {todaySeconds > 0 && (
-        <div className="w-full bg-amber-100/60 border border-amber-200 rounded-xl px-5 py-4 flex justify-between items-center">
-          <p className="text-xs text-amber-700 uppercase tracking-wide">Today</p>
-          <p className="font-mono text-2xl text-amber-800">{fmt(todaySeconds)}</p>
-        </div>
-      )}
     </div>
   );
 }

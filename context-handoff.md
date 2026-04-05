@@ -1,5 +1,7 @@
 # Productivity Stopwatch — Context Handoff
 
+> Fast catch-up: read `agent-summary.md` first. Use this file for setup, reflection, and fuller context.
+
 ## Who I am
 I'm learning web dev by building a productivity stopwatch app. I want code explained as we go — design choices, how things link together. I enjoy the process over the product (vibe coding).
 
@@ -52,6 +54,7 @@ Every page shares:
 - `<SettingsGear />` — cog icon fixed top-right, links to /settings
 - `<Nav />` — Stats / History links
 - `<LockInButton />` — tan button that starts the timer (on home page only)
+- `TimerProvider` — shared timer state across routes
 
 ---
 
@@ -60,6 +63,8 @@ Every page shares:
 - Start / pause / resume / stop timer
 - Tasks — create, rename, remove (soft-deleted via `archived: true`)
 - Sessions tagged with a task, saved to Supabase on stop
+- Timer persists across navigation and refresh using `localStorage`
+- Live "Today" total shown inside the stopwatch card
 - Stats page: 365-day activity heatmap
   - Hover cell → tooltip with date + time range
   - Click cell → modal with hourly bar chart + task breakdown
@@ -70,6 +75,8 @@ Every page shares:
   - Multi-key combos supported (e.g. Ctrl+B)
 - Erase all data button (deletes sessions, archives all tasks in one operation)
 - Sign out in Settings (removed from home page header)
+
+For change history, see `codingupdates.md`. For the latest timer architecture, read `app/components/TimerContext.tsx`.
 
 ### Default keyboard shortcuts
 | Action | Default key |
@@ -171,6 +178,16 @@ npm run dev
 ```
 
 The SQL tables only need to be created once in Supabase — they persist across machines because they're in the cloud, not locally.
+
+---
+
+## What matters technically
+
+- `app/layout.tsx` wraps the app in `TimerProvider`.
+- `app/page.tsx` is the main product flow: auth, task selection, timer, save session.
+- `app/stats/page.tsx` and `app/history/page.tsx` each fetch and transform session data client-side.
+- Keyboard shortcut helpers currently live in `app/settings/page.tsx` and are imported into other pages.
+- `lib/supabase.ts` is the shared client and source of `Session` / `Task` types.
 
 ---
 

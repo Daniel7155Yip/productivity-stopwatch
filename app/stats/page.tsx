@@ -206,11 +206,11 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
     byDate[key] = (byDate[key] ?? 0) + s.duration_seconds;
   }
 
-  // Rolling annual window: same date last year → today
+  // Annual window: April 5 2026 → April 5 2027
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const rangeStart = new Date(today);
-  const rangeEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+  const rangeStart = new Date(2026, 3, 5); // Apr 5 2026
+  const rangeEnd = new Date(2027, 3, 5);   // Apr 5 2027
 
   // Pad grid to Sunday of rangeStart's week and Saturday of today's week
   const gridStart = new Date(rangeStart);
@@ -316,13 +316,14 @@ function ContributionGrid({ sessions, tasks }: { sessions: Session[]; tasks: Tas
                     const key = dateKey(day);
                     const secs = byDate[key] ?? 0;
                     const isOutOfRange = day < rangeStart || day > rangeEnd;
+                    const isFuture = day > today;
                     return (
                       <div
                         key={di}
-                        title={isOutOfRange ? "" : `${day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${secs > 0 ? `${fmt(secs)} — ${heatLabel(secs)}` : "No session"}`}
-                        className={`w-3 h-3 rounded-sm transition-opacity ${isOutOfRange ? "cursor-default" : "cursor-pointer hover:opacity-70"}`}
-                        style={{ backgroundColor: isOutOfRange ? "#F5F4F3" : heatColor(secs) }}
-                        onClick={() => { if (!isOutOfRange) setSelectedDay(day); }}
+                        title={isOutOfRange ? "" : isFuture ? day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : `${day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${secs > 0 ? `${fmt(secs)} — ${heatLabel(secs)}` : "No session"}`}
+                        className={`w-3 h-3 rounded-sm transition-opacity ${isOutOfRange || isFuture ? "cursor-default" : "cursor-pointer hover:opacity-70"}`}
+                        style={{ backgroundColor: isOutOfRange ? "#F5F4F3" : isFuture ? "#EDECEA" : heatColor(secs) }}
+                        onClick={() => { if (!isOutOfRange && !isFuture) setSelectedDay(day); }}
                       />
                     );
                   })}

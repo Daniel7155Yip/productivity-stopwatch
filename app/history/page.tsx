@@ -27,21 +27,35 @@ type View = "day" | "week" | "month";
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 
 function BarChart({ bars, maxVal }: { bars: { label: string; seconds: number }[]; maxVal: number }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
   return (
     <div className="flex items-end gap-1 h-28 w-full">
-      {bars.map(({ label, seconds }) => {
+      {bars.map(({ label, seconds }, idx) => {
         const pct = maxVal > 0 ? (seconds / maxVal) * 100 : 0;
+        const isHovered = hoveredIdx === idx;
         return (
-          <div key={label} className="flex flex-col items-center flex-1 gap-1">
+          <div
+            key={idx}
+            className="flex flex-col items-center flex-1 gap-1 relative"
+            onMouseEnter={() => setHoveredIdx(idx)}
+            onMouseLeave={() => setHoveredIdx(null)}
+          >
+            {isHovered && (
+              <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap bg-stone-700 text-white text-[9px] font-mono px-1.5 py-0.5 rounded shadow pointer-events-none">
+                {seconds > 0 ? fmt(seconds) : "No sessions"}
+              </div>
+            )}
             <div className="w-full flex flex-col justify-end" style={{ height: "88px" }}>
               <div
                 className="w-full rounded-t-sm transition-all"
                 style={{
                   height: `${pct}%`,
                   minHeight: seconds > 0 ? "3px" : "0",
-                  backgroundColor: seconds > 0 ? "#C4A484" : "#E7E5E4",
+                  backgroundColor: isHovered
+                    ? (seconds > 0 ? "#A07855" : "#D1CFC9")
+                    : (seconds > 0 ? "#C4A484" : "#E7E5E4"),
                 }}
-                title={seconds > 0 ? fmt(seconds) : "No session"}
               />
             </div>
             <span className="text-[9px] text-stone-400">{label}</span>

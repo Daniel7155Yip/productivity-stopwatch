@@ -12,6 +12,7 @@ interface TimerContextValue {
   running: boolean;
   selectedTaskId: string;
   setSelectedTaskId: (id: string) => void;
+  setElapsed: (seconds: number) => void;
   start: () => void;
   pause: () => void;
   stop: () => StoppedSession | null;
@@ -41,6 +42,7 @@ type TimerAction =
   | { type: "start" }
   | { type: "pause" }
   | { type: "reset" }
+  | { type: "set-elapsed"; payload: number }
   | { type: "set-task"; payload: string };
 
 const TimerContext = createContext<TimerContextValue | null>(null);
@@ -70,6 +72,8 @@ function timerReducer(state: TimerState, action: TimerAction): TimerState {
       return { ...state, running: false };
     case "reset":
       return { ...state, elapsed: 0, running: false };
+    case "set-elapsed":
+      return { ...state, elapsed: action.payload, running: false };
     case "set-task":
       return { ...state, selectedTaskId: action.payload };
     default:
@@ -235,10 +239,14 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("beforeunload", persistOnLifecycleChange);
       clearTicker();
     };
+    // These listeners intentionally bind to the current ref-backed helpers once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     persistTimerState();
+    // Persisting is intentionally driven by state changes only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.elapsed, state.hydrated, state.running, state.selectedTaskId]);
 
   function start() {
@@ -281,6 +289,15 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "set-task", payload: id });
   }
 
+  function setElapsed(seconds: number) {
+    const nextElapsed = Math.max(0, Math.floor(seconds));
+    clearTicker();
+    segmentStartMsRef.current = null;
+    elapsedBeforeRunRef.current = nextElapsed;
+    startRef.current = nextElapsed > 0 ? new Date(Date.now() - nextElapsed * 1000) : null;
+    dispatch({ type: "set-elapsed", payload: nextElapsed });
+  }
+
   return (
     <TimerContext.Provider
       value={{
@@ -288,6 +305,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
         running: state.running,
         selectedTaskId: state.selectedTaskId,
         setSelectedTaskId,
+        setElapsed,
         start,
         pause,
         stop,

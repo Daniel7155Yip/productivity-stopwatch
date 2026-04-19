@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadShortcuts, matchesShortcut } from "@/app/settings/page";
 import { supabase, type Session, type Task } from "@/lib/supabase";
@@ -15,6 +15,22 @@ function fmt(seconds: number) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return [h, m, s].map(n => String(n).padStart(2, "0")).join(":");
+}
+
+function parseDurationInput(value: string) {
+  const parts = value.trim().split(":");
+  if (parts.length === 0 || parts.length > 3) return null;
+  if (parts.some(part => part === "" || !/^\d+$/.test(part))) return null;
+
+  const nums = parts.map(Number);
+  if (nums.some(Number.isNaN)) return null;
+
+  if (parts.length >= 2 && (nums.at(-1) ?? 0) > 59) return null;
+  if (parts.length === 3 && (nums[1] ?? 0) > 59) return null;
+
+  if (parts.length === 1) return nums[0];
+  if (parts.length === 2) return nums[0] * 60 + nums[1];
+  return nums[0] * 3600 + nums[1] * 60 + nums[2];
 }
 
 function todayLabel() {
@@ -85,7 +101,7 @@ function AuthForm() {
 
 function App({ user }: { user: User }) {
   const router = useRouter();
-  const { elapsed, running, selectedTaskId, setSelectedTaskId, start, pause, stop } = useTimer();
+  const { elapsed, running, selectedTaskId, setSelectedTaskId, setElapsed, start, pause, stop } = useTimer();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -94,6 +110,8 @@ function App({ user }: { user: User }) {
   const [addingTask, setAddingTask] = useState(false);
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [editingElapsed, setEditingElapsed] = useState(false);
+  const [elapsedInput, setElapsedInput] = useState("");
 
   const [greeting] = useState(() => {
     const hour = new Date().getHours();
@@ -145,46 +163,12 @@ function App({ user }: { user: User }) {
     return messages[Math.floor(Math.random() * messages.length)];
   });
 
-  useEffect(() => {
-    loadSessions();
-    loadTasks();
-  }, []);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      const sc = loadShortcuts();
-      if (e.key === " ") {
-        e.preventDefault();
-        if (!running && elapsed === 0) start();
-        else if (running) pause();
-      }
-      if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); handleStop(); }
-      if (matchesShortcut(e, sc.discardSession) && elapsed > 0) { e.preventDefault(); handleDiscard(); }
-      if (matchesShortcut(e, sc.timer)) router.push("/");
-      if (matchesShortcut(e, sc.stats)) router.push("/stats");
-      if (matchesShortcut(e, sc.history)) router.push("/history");
-      if (matchesShortcut(e, sc.settings)) router.push("/settings");
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [running, elapsed]);
-
   async function loadSessions() {
     const { data } = await supabase
       .from("sessions").select("*").eq("user_id", user.id)
       .order("started_at", { ascending: false });
     if (data) setSessions(data as Session[]);
     setSessionsLoaded(true);
-  }
-
-  async function loadTasks() {
-    const { data } = await supabase
-      .from("tasks").select("*").eq("user_id", user.id).eq("archived", false)
-      .order("created_at", { ascending: true });
-    if (data) setTasks(data as Task[]);
   }
 
   async function createTask() {
@@ -225,6 +209,64 @@ function App({ user }: { user: User }) {
     });
     loadSessions();
   }
+
+  function openElapsedEditor() {
+    setElapsedInput(fmt(elapsed));
+    setEditingElapsed(true);
+  }
+
+  function closeElapsedEditor() {
+    setEditingElapsed(false);
+    setElapsedInput("");
+  }
+
+  function saveElapsedEdit() {
+    const nextElapsed = parseDurationInput(elapsedInput);
+    if (nextElapsed == null) return;
+    setElapsed(nextElapsed);
+    closeElapsedEditor();
+  }
+
+  useEffect(() => {
+    async function loadInitialData() {
+      const [{ data: sessionsData }, { data: tasksData }] = await Promise.all([
+        supabase
+          .from("sessions").select("*").eq("user_id", user.id)
+          .order("started_at", { ascending: false }),
+        supabase
+          .from("tasks").select("*").eq("user_id", user.id).eq("archived", false)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (sessionsData) setSessions(sessionsData as Session[]);
+      setSessionsLoaded(true);
+      if (tasksData) setTasks(tasksData as Task[]);
+    }
+
+    void loadInitialData();
+  }, [user.id]);
+
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    const sc = loadShortcuts();
+    if (e.key === " ") {
+      e.preventDefault();
+      if (!running && elapsed === 0) start();
+      else if (running) pause();
+    }
+    if (matchesShortcut(e, sc.stopTimer) && elapsed > 0) { e.preventDefault(); void handleStop(); }
+    if (matchesShortcut(e, sc.discardSession) && elapsed > 0) { e.preventDefault(); handleDiscard(); }
+    if (matchesShortcut(e, sc.timer)) router.push("/");
+    if (matchesShortcut(e, sc.stats)) router.push("/stats");
+    if (matchesShortcut(e, sc.history)) router.push("/history");
+    if (matchesShortcut(e, sc.settings)) router.push("/settings");
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const todayStr = new Date().toDateString();
   // Completed sessions today (saved to Supabase)
@@ -383,15 +425,64 @@ function App({ user }: { user: User }) {
         )}
 
         {/* Timer */}
-        <span className="text-8xl tracking-tight text-stone-700"
-          style={{ fontFamily: "var(--font-lora), serif", fontVariantNumeric: "tabular-nums" }}>
-          {fmt(elapsed)}
-        </span>
+        <div className="flex items-center justify-center gap-3">
+          {editingElapsed ? (
+            <>
+              <input
+                autoFocus
+                value={elapsedInput}
+                onChange={e => setElapsedInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") saveElapsedEdit();
+                  if (e.key === "Escape") closeElapsedEditor();
+                }}
+                className="w-64 rounded-xl border border-stone-200 bg-white px-4 py-3 text-center text-4xl text-stone-700 focus:outline-none focus:border-amber-400"
+                style={{ fontFamily: "var(--font-lora), serif", fontVariantNumeric: "tabular-nums" }}
+                inputMode="numeric"
+                aria-label="Edit timer value"
+              />
+              <button
+                onClick={saveElapsedEdit}
+                disabled={parseDurationInput(elapsedInput) == null}
+                className="rounded-xl bg-stone-700 px-3 py-2 text-sm text-amber-50 transition-colors hover:bg-stone-600 disabled:opacity-40"
+              >
+                Save
+              </button>
+              <button
+                onClick={closeElapsedEditor}
+                className="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-200"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span
+                className="text-8xl tracking-tight text-stone-700"
+                style={{ fontFamily: "var(--font-lora), serif", fontVariantNumeric: "tabular-nums" }}
+              >
+                {fmt(elapsed)}
+              </span>
+              {!running && elapsed > 0 && (
+                <button
+                  onClick={openElapsedEditor}
+                  className="text-stone-300 hover:text-stone-500 transition-colors shrink-0"
+                  title="Edit timer value"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Controls */}
         <div className="flex gap-3 items-center justify-center">
           {!running ? (
-            <button onClick={start}
+            <button onClick={() => { closeElapsedEditor(); start(); }}
               className="w-14 h-14 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80"
               style={{ backgroundColor: "#7D7575" }}>
               {/* Play icon */}

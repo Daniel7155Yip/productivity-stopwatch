@@ -20,7 +20,7 @@ export function Nav({ onLockIn }: { onLockIn?: () => void }) {
           href={l.href}
           className={`text-xs transition-colors ${
             pathname === l.href
-              ? "text-stone-700 font-semibold"
+              ? "text-stone-700 font-bold"
               : "text-stone-400 hover:text-stone-600"
           }`}
         >

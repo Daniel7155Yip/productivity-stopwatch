@@ -260,6 +260,7 @@ function App({ user }: { user: User }) {
     if (matchesShortcut(e, sc.timer)) router.push("/");
     if (matchesShortcut(e, sc.stats)) router.push("/stats");
     if (matchesShortcut(e, sc.history)) router.push("/history");
+    if (matchesShortcut(e, sc.social)) router.push("/social");
     if (matchesShortcut(e, sc.settings)) router.push("/settings");
   });
 

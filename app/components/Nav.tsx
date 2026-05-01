@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 const links = [
   { href: "/stats", label: "Stats" },
   { href: "/history", label: "History" },
+  { href: "/social", label: "Social" },
 ];
 
 export function Nav({ onLockIn }: { onLockIn?: () => void }) {
